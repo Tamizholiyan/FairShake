@@ -306,7 +306,7 @@ export default function RegisterPage() {
                   required
                   value={formData.admin_id}
                   onChange={(e) => setFormData({ ...formData, admin_id: e.target.value.toUpperCase() })}
-                  placeholder="ADM001"
+                  placeholder="ADM002"
                   className="input-field"
                   style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}
                 />

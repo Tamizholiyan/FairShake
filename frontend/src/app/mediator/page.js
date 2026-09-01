@@ -180,6 +180,29 @@ export default function MediatorDashboard() {
         </button>
       </div>
 
+      {error && (
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: '12px',
+          background: 'rgba(244, 63, 94, 0.12)',
+          border: '1px solid rgba(244, 63, 94, 0.3)',
+          color: 'var(--accent-rose)',
+          fontSize: '0.9rem',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={18} />
+            <span>{error}</span>
+          </div>
+          <button onClick={fetchDisputes} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}>
           Loading support cases...

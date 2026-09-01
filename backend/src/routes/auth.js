@@ -29,8 +29,9 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Invalid role selected. Must be CLIENT, PROVIDER, or MEDIATOR.' });
   }
 
-  const client = await db.getClient();
+  let client;
   try {
+    client = await db.getClient();
     await client.query('BEGIN');
 
     // Check unique email
@@ -132,11 +133,11 @@ router.post('/register', async (req, res) => {
       },
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Failed to create account: ' + error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 

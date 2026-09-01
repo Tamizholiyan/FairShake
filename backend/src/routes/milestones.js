@@ -36,8 +36,9 @@ router.post('/:id/submit', authenticateToken, upload.single('file'), async (req,
 
   const fileUrl = `/uploads/${savedFilename}`;
 
-  const client = await db.getClient();
+  let client;
   try {
+    client = await db.getClient();
     await client.query('BEGIN');
 
     const { rows: mRows } = await client.query(
@@ -94,11 +95,11 @@ router.post('/:id/submit', authenticateToken, upload.single('file'), async (req,
       status: 'SUBMITTED',
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Milestone submission error:', error);
-    res.status(500).json({ error: 'Failed to submit deliverable: ' + error.message });
+    res.status(500).json({ error: 'Failed to submit milestone deliverable: ' + error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -107,8 +108,9 @@ router.post('/:id/approve', authenticateToken, async (req, res) => {
   const milestoneId = req.params.id;
   const userId = req.user.id;
 
-  const client = await db.getClient();
+  let client;
   try {
+    client = await db.getClient();
     await client.query('BEGIN');
 
     const { rows: mRows } = await client.query(
@@ -150,11 +152,11 @@ router.post('/:id/approve', authenticateToken, async (req, res) => {
       status: 'RELEASED',
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Milestone approval error:', error);
     res.status(500).json({ error: 'Failed to approve milestone: ' + error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
@@ -168,8 +170,9 @@ router.post('/:id/dispute', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Please describe the issue with this deliverable.' });
   }
 
-  const client = await db.getClient();
+  let client;
   try {
+    client = await db.getClient();
     await client.query('BEGIN');
 
     const { rows: mRows } = await client.query(
@@ -211,11 +214,11 @@ router.post('/:id/dispute', authenticateToken, async (req, res) => {
       status: 'IN_MEDIATION',
     });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Report issue error:', error);
-    res.status(500).json({ error: 'Failed to report issue: ' + error.message });
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    console.error('Dispute creation error:', error);
+    res.status(500).json({ error: 'Failed to create dispute: ' + error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 

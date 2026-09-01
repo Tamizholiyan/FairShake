@@ -102,8 +102,9 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Mediator explanation note is required for both parties to see.' });
   }
 
-  const client = await db.getClient();
+  let client;
   try {
+    client = await db.getClient();
     await client.query('BEGIN');
 
     const { rows: disputeRows } = await client.query(
@@ -194,11 +195,11 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
       resolution,
     });
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('Dispute resolution error:', error);
     res.status(500).json({ error: 'Failed to resolve issue: ' + error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
 
