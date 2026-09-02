@@ -19,22 +19,34 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// POST /api/milestones/:id/submit - Provider submits deliverable (supports initial & revision resubmissions)
-router.post('/:id/submit', authenticateToken, upload.single('file'), async (req, res) => {
+// POST /api/milestones/:id/submit - Provider submits deliverable (supports multiple photos/files and revision rounds)
+router.post('/:id/submit', authenticateToken, upload.array('files', 5), async (req, res) => {
   const milestoneId = req.params.id;
   const userId = req.user.id;
 
-  if (!req.file) {
-    return res.status(400).json({ error: 'Please select a deliverable file to upload.' });
+  const uploadedFiles = req.files || (req.file ? [req.file] : []);
+  if (!uploadedFiles || uploadedFiles.length === 0) {
+    return res.status(400).json({ error: 'Please select at least one deliverable file to upload.' });
   }
 
-  const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
-  const ext = path.extname(req.file.originalname) || '.bin';
-  const savedFilename = `${Date.now()}_m${milestoneId}_${hash.substring(0, 12)}${ext}`;
-  const filePath = path.join(uploadsDir, savedFilename);
-  fs.writeFileSync(filePath, req.file.buffer);
+  // Process and save all files
+  const processedFiles = [];
+  for (let i = 0; i < uploadedFiles.length; i++) {
+    const file = uploadedFiles[i];
+    const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+    const ext = path.extname(file.originalname) || '.bin';
+    const savedFilename = `${Date.now()}_m${milestoneId}_${i}_${hash.substring(0, 10)}${ext}`;
+    const filePath = path.join(uploadsDir, savedFilename);
+    fs.writeFileSync(filePath, file.buffer);
 
-  const fileUrl = `/uploads/${savedFilename}`;
+    processedFiles.push({
+      fileUrl: `/uploads/${savedFilename}`,
+      originalFilename: file.originalname,
+      hash,
+    });
+  }
+
+  const primaryFile = processedFiles[0];
 
   let client;
   try {
@@ -78,20 +90,35 @@ router.post('/:id/submit', authenticateToken, upload.single('file'), async (req,
       `INSERT INTO submissions (milestone_id, file_url, original_filename, sha256_hash, revision_round, submitted_by)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, milestone_id, file_url, original_filename, revision_round, submitted_at`,
-      [milestoneId, fileUrl, req.file.originalname, hash, revisionRound, userId]
+      [milestoneId, primaryFile.fileUrl, primaryFile.originalFilename, primaryFile.hash, revisionRound, userId]
     );
+
+    const submissionId = subRows[0].id;
+
+    // Insert all files into submission_files table
+    for (const pf of processedFiles) {
+      await client.query(
+        `INSERT INTO submission_files (submission_id, file_url, original_filename, sha256_hash)
+         VALUES ($1, $2, $3, $4)`,
+        [submissionId, pf.fileUrl, pf.originalFilename, pf.hash]
+      );
+    }
 
     // Transition milestone status to SUBMITTED
     await transitionMilestone(client, milestoneId, 'SUBMITTED', userId, {
-      submissionId: subRows[0].id,
+      submissionId,
       revisionRound,
+      fileCount: processedFiles.length,
     });
 
     await client.query('COMMIT');
 
     res.json({
       message: revisionRound > 1 ? 'Revised deliverable submitted successfully.' : 'Deliverable submitted for client review.',
-      submission: subRows[0],
+      submission: {
+        ...subRows[0],
+        files: processedFiles,
+      },
       status: 'SUBMITTED',
     });
   } catch (error) {

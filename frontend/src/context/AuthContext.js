@@ -8,17 +8,19 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     async function loadUser() {
-      const token = getAuthToken();
-      if (!token) {
+      const storedToken = getAuthToken();
+      if (!storedToken) {
         setLoading(false);
         return;
       }
+      setToken(storedToken);
 
       try {
         const res = await api.getMe();
@@ -26,6 +28,7 @@ export function AuthProvider({ children }) {
       } catch (err) {
         console.error('Session restore failed:', err);
         setAuthToken(null);
+        setToken(null);
         setUser(null);
       } finally {
         setLoading(false);
@@ -50,6 +53,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.login({ email, password });
     setAuthToken(res.token);
+    setToken(res.token);
     setUser(res.user);
     const targetPath = getDashboardPath(res.user.role);
     router.push(targetPath);
@@ -59,6 +63,7 @@ export function AuthProvider({ children }) {
   const register = async (userData) => {
     const res = await api.register(userData);
     setAuthToken(res.token);
+    setToken(res.token);
     setUser(res.user);
     const targetPath = getDashboardPath(res.user.role);
     router.push(targetPath);
@@ -67,6 +72,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     setAuthToken(null);
+    setToken(null);
     setUser(null);
     router.push('/login');
   };
@@ -75,6 +81,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         user,
+        token,
         loading,
         login,
         register,
