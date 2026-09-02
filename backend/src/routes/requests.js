@@ -220,20 +220,20 @@ router.post('/:id/verify-lock', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/requests/open - Provider Open Feed with Category & Distance Filtering and Provider Rating Stats
+// GET /api/requests/open - Provider Open Feed with Strict Category & Distance Filtering
 router.get('/open', authenticateToken, async (req, res) => {
   const providerId = req.user.id;
-  const radiusKm = req.query.radius_km ? parseFloat(req.query.radius_km) : null;
-  const requestedCatId = req.query.category_id;
+  const radiusKm = parseFloat(req.query.radius_km) || 25;
 
   try {
-    // Get provider profile
+    // Get provider profile with registered service category
     const { rows: providerRows } = await db.query(
       'SELECT id, service_category_id, latitude, longitude FROM users WHERE id = $1',
       [providerId]
     );
     const provider = providerRows[0];
 
+    const providerCatId = provider?.service_category_id;
     const providerLat = parseFloat(req.query.lat || provider?.latitude);
     const providerLng = parseFloat(req.query.lng || provider?.longitude);
 
@@ -265,8 +265,9 @@ router.get('/open', authenticateToken, async (req, res) => {
     `;
     const params = [providerId];
 
-    if (requestedCatId && requestedCatId !== 'all') {
-      params.push(parseInt(requestedCatId, 10));
+    // Strictly match only the provider's registered trade/category
+    if (providerCatId) {
+      params.push(providerCatId);
       query += ` AND r.category_id = $${params.length}`;
     }
 

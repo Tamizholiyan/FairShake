@@ -15,9 +15,7 @@ export default function ProviderDashboard() {
 
   const [openRequests, setOpenRequests] = useState([]);
   const [myJobs, setMyJobs] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [radiusKm, setRadiusKm] = useState(1000);
+  const [radiusKm, setRadiusKm] = useState(25);
   const [loadingOpen, setLoadingOpen] = useState(true);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [applyingReq, setApplyingReq] = useState(null);
@@ -27,28 +25,12 @@ export default function ProviderDashboard() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  useEffect(() => {
-    async function loadCategories() {
-      try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/auth/categories`);
-        const data = await res.json();
-        if (data.categories) {
-          setCategories(data.categories);
-        }
-      } catch (err) {
-        console.warn('Failed to load categories', err);
-      }
-    }
-    loadCategories();
-  }, []);
-
   const fetchOpenRequests = async () => {
     setLoadingOpen(true);
     try {
       const token = localStorage.getItem('fairshake_token');
-      const catParam = selectedCategory && selectedCategory !== 'all' ? `&category_id=${selectedCategory}` : '';
-      const radParam = radiusKm ? `&radius_km=${radiusKm}` : '';
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/open?${catParam}${radParam}`, {
+      const radParam = radiusKm ? `?radius_km=${radiusKm}` : '';
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/open${radParam}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -81,7 +63,7 @@ export default function ProviderDashboard() {
   useEffect(() => {
     fetchOpenRequests();
     fetchMyJobs();
-  }, [selectedCategory, radiusKm, user]);
+  }, [radiusKm, user]);
 
   const handleOpenApplyModal = (req) => {
     setApplyingReq(req);
@@ -195,54 +177,30 @@ export default function ProviderDashboard() {
 
           {/* Category & Distance Filters */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Wrench size={14} color="var(--text-muted)" />
-              <select
-                value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  outline: 'none',
-                }}
-              >
-                <option value="all" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>All Categories / Trades</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <MapPin size={14} color="var(--text-muted)" />
-              <select
-                value={radiusKm}
-                onChange={(e) => setRadiusKm(Number(e.target.value))}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: '8px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  outline: 'none',
-                }}
-              >
-                <option value="5" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 5 km</option>
-                <option value="15" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 15 km</option>
-                <option value="25" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 25 km</option>
-                <option value="50" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 50 km</option>
-                <option value="1000" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>All Distances (Anywhere)</option>
-              </select>
-            </div>
+          {/* Distance Radius Filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <MapPin size={15} color="var(--text-muted)" />
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{t('radius_filter')}:</span>
+            <select
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              style={{
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                outline: 'none',
+              }}
+            >
+              <option value="5" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 5 km</option>
+              <option value="15" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 15 km</option>
+              <option value="25" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 25 km</option>
+              <option value="50" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Within 50 km</option>
+              <option value="100" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>All (100 km)</option>
+            </select>
           </div>
         </div>
 
@@ -252,9 +210,9 @@ export default function ProviderDashboard() {
           </div>
         ) : openRequests.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-            <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>No open requests found matching filters.</p>
-            <p style={{ fontSize: '0.82rem', maxWidth: '480px', margin: '0 auto' }}>
-              Note: Requests only appear in the open feed once the client secures the milestone payment into escrow (Status: <strong>OPEN</strong>). Try switching the category dropdown to <em>All Categories</em>.
+            <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('no_open_jobs')}</p>
+            <p style={{ fontSize: '0.82rem', maxWidth: '480px', margin: '0 auto', color: 'var(--text-muted)' }}>
+              Showing only open requests matching your trade ({user?.category_name || 'your category'}). Requests appear once the client funds the escrow.
             </p>
           </div>
         ) : (
