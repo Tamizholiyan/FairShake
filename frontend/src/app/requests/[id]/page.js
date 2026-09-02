@@ -432,7 +432,9 @@ export default function RequestDetailPage() {
   if (!request) {
     return (
       <div className="container" style={{ textAlign: 'center', paddingTop: '80px' }}>
-        <p style={{ color: 'var(--accent-rose)', marginBottom: '16px' }}>Request not found.</p>
+        <p style={{ color: 'var(--accent-rose)', marginBottom: '16px', fontSize: '1rem', fontWeight: 600 }}>
+          {error || 'Request not found.'}
+        </p>
         <Link href={getDashboardPath(user?.role)} className="btn btn-secondary">
           Back to Dashboard
         </Link>

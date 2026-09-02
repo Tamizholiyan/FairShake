@@ -930,11 +930,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
               r.total_amount, r.status, r.address_text, r.latitude, r.longitude, r.created_at,
               c.name as client_name, c.email as client_email, c.phone as client_phone,
               p.name as provider_name, p.email as provider_email, p.phone as provider_phone,
-              sc.name as category_name,
-              COALESCE((SELECT ROUND(AVG(stars)::numeric, 1) FROM ratings rt WHERE rt.provider_id = r.provider_id), 0) as provider_avg_rating,
-              COALESCE((SELECT COUNT(*) FROM ratings rt WHERE rt.provider_id = r.provider_id), 0)::int as provider_rating_count,
-              (SELECT json_build_object('id', cr.id, 'reason', cr.reason, 'status', cr.status, 'unreleased_amount', cr.unreleased_amount, 'mediator_notes', cr.mediator_notes)
-               FROM cancellation_requests cr WHERE cr.request_id = r.id ORDER BY cr.created_at DESC LIMIT 1) as cancellation_request
+              sc.name as category_name
        FROM requests r
        JOIN users c ON r.client_id = c.id
        LEFT JOIN users p ON r.provider_id = p.id
@@ -949,9 +945,53 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const requestObj = reqRows[0];
 
+    // Safe ratings query
+    let providerAvgRating = 0;
+    let providerRatingCount = 0;
+    let ratingData = null;
+    try {
+      if (requestObj.provider_id) {
+        const { rows: rtRows } = await db.query(
+          `SELECT ROUND(AVG(stars)::numeric, 1) as avg_rating, COUNT(*)::int as count 
+           FROM ratings WHERE provider_id = $1`,
+          [requestObj.provider_id]
+        );
+        if (rtRows.length > 0) {
+          providerAvgRating = Number(rtRows[0].avg_rating) || 0;
+          providerRatingCount = Number(rtRows[0].count) || 0;
+        }
+      }
+      const { rows: rRows } = await db.query(
+        `SELECT r.*, u.name as client_name 
+         FROM ratings r
+         JOIN users u ON r.client_id = u.id
+         WHERE r.request_id = $1`,
+        [requestId]
+      );
+      ratingData = rRows[0] || null;
+    } catch (e) {
+      // Ignore if ratings table does not exist
+    }
+
+    // Safe cancellation request query
+    let cancellationRequestData = null;
+    try {
+      const { rows: crRows } = await db.query(
+        `SELECT id, reason, status, unreleased_amount, mediator_notes, created_at
+         FROM cancellation_requests 
+         WHERE request_id = $1 
+         ORDER BY created_at DESC LIMIT 1`,
+        [requestId]
+      );
+      cancellationRequestData = crRows[0] || null;
+    } catch (e) {
+      // Ignore if cancellation_requests table does not exist
+    }
+
     // Fetch milestones
     const { rows: milestoneRows } = await db.query(
-      `SELECT m.id, m.request_id, m.title, m.description, m.amount, m.sequence, m.status, m.due_date
+      `SELECT m.id, m.request_id, m.title, m.amount, m.sequence, m.status, m.due_date,
+              COALESCE(m.description, '') as description
        FROM milestones m 
        WHERE m.request_id = $1 
        ORDER BY m.sequence ASC`,
@@ -959,48 +999,63 @@ router.get('/:id', authenticateToken, async (req, res) => {
     );
 
     // Fetch submissions with multi-files
-    const { rows: submissionRows } = await db.query(
-      `SELECT s.id, s.milestone_id, s.file_url, s.original_filename, s.revision_round, s.submitted_at,
-              u.name as submitter_name,
-              COALESCE(
-                (SELECT json_agg(
-                  json_build_object(
-                    'id', sf.id,
-                    'file_url', sf.file_url,
-                    'original_filename', sf.original_filename
-                  )
-                ) FROM submission_files sf WHERE sf.submission_id = s.id),
-                '[]'::json
-              ) as files
-       FROM submissions s
-       JOIN milestones m ON s.milestone_id = m.id
-       JOIN users u ON s.submitted_by = u.id
-       WHERE m.request_id = $1
-       ORDER BY s.submitted_at DESC`,
-      [requestId]
-    );
+    let submissionRows = [];
+    try {
+      const { rows: sRows } = await db.query(
+        `SELECT s.id, s.milestone_id, s.file_url, s.original_filename, s.revision_round, s.submitted_at,
+                u.name as submitter_name
+         FROM submissions s
+         JOIN milestones m ON s.milestone_id = m.id
+         JOIN users u ON s.submitted_by = u.id
+         WHERE m.request_id = $1
+         ORDER BY s.submitted_at DESC`,
+        [requestId]
+      );
+
+      // Try fetching submission_files
+      let submissionFiles = [];
+      try {
+        const { rows: sfRows } = await db.query(
+          `SELECT sf.id, sf.submission_id, sf.file_url, sf.original_filename 
+           FROM submission_files sf
+           JOIN submissions s ON sf.submission_id = s.id
+           JOIN milestones m ON s.milestone_id = m.id
+           WHERE m.request_id = $1`,
+          [requestId]
+        );
+        submissionFiles = sfRows;
+      } catch (sfErr) {
+        // Fallback to legacy single-file submission
+      }
+
+      submissionRows = sRows.map(s => ({
+        ...s,
+        files: submissionFiles.filter(sf => sf.submission_id === s.id).length > 0
+          ? submissionFiles.filter(sf => sf.submission_id === s.id)
+          : (s.file_url ? [{ id: s.id, file_url: s.file_url, original_filename: s.original_filename }] : [])
+      }));
+    } catch (sErr) {
+      console.warn('Submissions query warning:', sErr);
+    }
 
     // Fetch dispute details if any
-    const { rows: disputeRows } = await db.query(
-      `SELECT ds.id, ds.milestone_id, ds.reason, ds.status, ds.resolution, ds.mediator_notes, ds.created_at, ds.resolved_at,
-              u.name as raiser_name, m_user.name as resolver_name
-       FROM disputes ds
-       JOIN milestones m ON ds.milestone_id = m.id
-       JOIN users u ON ds.raised_by = u.id
-       LEFT JOIN users m_user ON ds.resolved_by = m_user.id
-       WHERE m.request_id = $1
-       ORDER BY ds.created_at DESC`,
-      [requestId]
-    );
-
-    // Fetch rating if completed
-    const { rows: ratingRows } = await db.query(
-      `SELECT r.*, u.name as client_name 
-       FROM ratings r
-       JOIN users u ON r.client_id = u.id
-       WHERE r.request_id = $1`,
-      [requestId]
-    );
+    let disputeRows = [];
+    try {
+      const { rows: dRows } = await db.query(
+        `SELECT ds.id, ds.milestone_id, ds.reason, ds.status, ds.resolution, ds.mediator_notes, ds.created_at, ds.resolved_at,
+                u.name as raiser_name, m_user.name as resolver_name
+         FROM disputes ds
+         JOIN milestones m ON ds.milestone_id = m.id
+         JOIN users u ON ds.raised_by = u.id
+         LEFT JOIN users m_user ON ds.resolved_by = m_user.id
+         WHERE m.request_id = $1
+         ORDER BY ds.created_at DESC`,
+        [requestId]
+      );
+      disputeRows = dRows;
+    } catch (dErr) {
+      console.warn('Disputes query warning:', dErr);
+    }
 
     const enrichedMilestones = milestoneRows.map(m => ({
       ...m,
@@ -1011,13 +1066,16 @@ router.get('/:id', authenticateToken, async (req, res) => {
     res.json({
       request: {
         ...requestObj,
+        provider_avg_rating: providerAvgRating,
+        provider_rating_count: providerRatingCount,
+        cancellation_request: cancellationRequestData,
         milestones: enrichedMilestones,
-        rating: ratingRows[0] || null,
+        rating: ratingData,
       },
     });
   } catch (error) {
     console.error('Fetch request detail error:', error);
-    res.status(500).json({ error: 'Failed to fetch request detail.' });
+    res.status(500).json({ error: 'Failed to fetch request detail: ' + error.message });
   }
 });
 
