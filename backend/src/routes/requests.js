@@ -223,7 +223,8 @@ router.post('/:id/verify-lock', authenticateToken, async (req, res) => {
 // GET /api/requests/open - Provider Open Feed with Category & Distance Filtering and Provider Rating Stats
 router.get('/open', authenticateToken, async (req, res) => {
   const providerId = req.user.id;
-  const radiusKm = parseFloat(req.query.radius_km) || 25;
+  const radiusKm = req.query.radius_km ? parseFloat(req.query.radius_km) : null;
+  const requestedCatId = req.query.category_id;
 
   try {
     // Get provider profile
@@ -233,7 +234,6 @@ router.get('/open', authenticateToken, async (req, res) => {
     );
     const provider = providerRows[0];
 
-    const providerCatId = provider?.service_category_id || req.query.category_id;
     const providerLat = parseFloat(req.query.lat || provider?.latitude);
     const providerLng = parseFloat(req.query.lng || provider?.longitude);
 
@@ -241,6 +241,7 @@ router.get('/open', authenticateToken, async (req, res) => {
       SELECT r.id, r.title, r.description, r.total_amount, r.status, r.address_text, r.latitude, r.longitude, r.created_at,
              c.name as client_name, c.email as client_email,
              sc.name as category_name,
+             r.category_id,
              (SELECT COUNT(*) FROM milestones m WHERE m.request_id = r.id)::int as milestone_count,
              (SELECT COUNT(*) FROM applications a WHERE a.request_id = r.id)::int as application_count,
              (SELECT status FROM applications a WHERE a.request_id = r.id AND a.provider_id = $1) as my_application_status,
@@ -264,8 +265,8 @@ router.get('/open', authenticateToken, async (req, res) => {
     `;
     const params = [providerId];
 
-    if (providerCatId) {
-      params.push(providerCatId);
+    if (requestedCatId && requestedCatId !== 'all') {
+      params.push(parseInt(requestedCatId, 10));
       query += ` AND r.category_id = $${params.length}`;
     }
 
@@ -285,7 +286,7 @@ router.get('/open', authenticateToken, async (req, res) => {
         };
       })
       .filter(r => {
-        if (req.query.ignore_radius === 'true') return true;
+        if (!radiusKm || req.query.ignore_radius === 'true' || radiusKm >= 1000) return true;
         if (r.distance_km !== null) return r.distance_km <= radiusKm;
         return true;
       });
@@ -294,7 +295,8 @@ router.get('/open', authenticateToken, async (req, res) => {
       requests: enriched,
       filter: {
         radius_km: radiusKm,
-        category_id: providerCatId,
+        category_id: requestedCatId || 'all',
+        provider_category_id: provider?.service_category_id,
         provider_location: providerLat && providerLng ? { lat: providerLat, lng: providerLng } : null,
       },
     });
@@ -886,6 +888,7 @@ router.get('/my', authenticateToken, async (req, res) => {
   try {
     let query = `
       SELECT r.id, r.title, r.description, r.total_amount, r.status, r.address_text, r.created_at,
+             r.client_id, r.provider_id,
              c.name as client_name, c.email as client_email,
              p.name as provider_name, p.email as provider_email, p.phone as provider_phone,
              sc.name as category_name,
@@ -893,21 +896,18 @@ router.get('/my', authenticateToken, async (req, res) => {
              (SELECT COUNT(*) FROM milestones m WHERE m.request_id = r.id AND m.status = 'RELEASED')::int as completed_milestones,
              (SELECT COUNT(*) FROM milestones m JOIN disputes ds ON ds.milestone_id = m.id WHERE m.request_id = r.id AND ds.status = 'OPEN')::int as open_issues,
              (SELECT COUNT(*) FROM applications a WHERE a.request_id = r.id)::int as application_count,
-             (SELECT COALESCE(ROUND(AVG(stars)::numeric, 1), 0) FROM ratings rt WHERE rt.provider_id = r.provider_id) as provider_avg_rating,
-             (SELECT COUNT(*) FROM ratings rt WHERE rt.provider_id = r.provider_id)::int as provider_rating_count
+             (SELECT status FROM applications a WHERE a.request_id = r.id AND a.provider_id = $1) as my_application_status
       FROM requests r
       JOIN users c ON r.client_id = c.id
       LEFT JOIN users p ON r.provider_id = p.id
       LEFT JOIN service_categories sc ON r.category_id = sc.id
     `;
-    const params = [];
+    const params = [userId];
 
     if (userRole === 'CLIENT') {
-      params.push(userId);
       query += ` WHERE r.client_id = $1`;
     } else if (userRole === 'PROVIDER') {
-      params.push(userId);
-      query += ` WHERE r.provider_id = $1`;
+      query += ` WHERE (r.provider_id = $1 OR r.id IN (SELECT request_id FROM applications WHERE provider_id = $1))`;
     }
 
     query += ` ORDER BY r.created_at DESC`;
@@ -916,7 +916,7 @@ router.get('/my', authenticateToken, async (req, res) => {
     res.json({ requests: rows });
   } catch (error) {
     console.error('Fetch my requests error:', error);
-    res.status(500).json({ error: 'Failed to fetch your requests.' });
+    res.status(500).json({ error: 'Failed to fetch your requests: ' + error.message });
   }
 });
 

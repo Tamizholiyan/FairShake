@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS addresses (
   is_default BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS area_text VARCHAR(150);
+ALTER TABLE addresses ADD COLUMN IF NOT EXISTS district_text VARCHAR(150);
 
 -- 13. Provider Applications / Proposals Table
 CREATE TABLE IF NOT EXISTS applications (
@@ -163,6 +165,9 @@ CREATE TABLE IF NOT EXISTS applications (
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(request_id, provider_id)
 );
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS proposed_amount NUMERIC(12, 2);
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS message TEXT;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PENDING';
 
 -- 14. Cancellation / Refund Requests Table
 CREATE TABLE IF NOT EXISTS cancellation_requests (
@@ -177,6 +182,14 @@ CREATE TABLE IF NOT EXISTS cancellation_requests (
   created_at TIMESTAMP DEFAULT NOW(),
   resolved_at TIMESTAMP
 );
+-- Ensure all columns exist even if table was previously created with partial schema:
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES users(id);
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS unreleased_amount NUMERIC(12, 2) DEFAULT 0;
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'PENDING';
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS mediator_notes TEXT;
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS resolved_by INTEGER REFERENCES users(id);
+ALTER TABLE cancellation_requests ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP;
 
 -- 15. Provider Ratings Table
 CREATE TABLE IF NOT EXISTS ratings (
@@ -189,6 +202,8 @@ CREATE TABLE IF NOT EXISTS ratings (
   created_at TIMESTAMP DEFAULT NOW(),
   UNIQUE(request_id, client_id)
 );
+ALTER TABLE ratings ADD COLUMN IF NOT EXISTS stars INTEGER;
+ALTER TABLE ratings ADD COLUMN IF NOT EXISTS review_text TEXT;
 
 -- 16. Multi-photo Submissions Files Table
 CREATE TABLE IF NOT EXISTS submission_files (
@@ -199,6 +214,8 @@ CREATE TABLE IF NOT EXISTS submission_files (
   sha256_hash VARCHAR(64) NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
+ALTER TABLE submission_files ADD COLUMN IF NOT EXISTS file_url TEXT;
+ALTER TABLE submission_files ADD COLUMN IF NOT EXISTS sha256_hash VARCHAR(64);
 
 -- ====================================================================
 -- SEED INITIAL DATA
