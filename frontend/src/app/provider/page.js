@@ -175,8 +175,6 @@ export default function ProviderDashboard() {
             </p>
           </div>
 
-          {/* Category & Distance Filters */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           {/* Distance Radius Filter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MapPin size={15} color="var(--text-muted)" />
