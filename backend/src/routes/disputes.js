@@ -86,8 +86,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
 // POST /api/disputes/:id/resolve - Mediator resolution: Approve Submission OR Request Revision (Section 10.2)
 router.post('/:id/resolve', authenticateToken, async (req, res) => {
-  const disputeId = req.params.id;
-  const { resolution, notes } = req.body;
+  const { resolution, notes, mediator_notes, mediatorNotes } = req.body;
+  const explanationNote = notes || mediator_notes || mediatorNotes;
   const mediatorId = req.user.id;
 
   if (req.user.role !== 'MEDIATOR') {
@@ -98,7 +98,7 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
     return res.status(400).json({ error: 'Resolution must be either RELEASED (Approve) or REVISION_REQUESTED (Request Revision).' });
   }
 
-  if (!notes || !notes.trim()) {
+  if (!explanationNote || !explanationNote.trim()) {
     return res.status(400).json({ error: 'Mediator explanation note is required for both parties to see.' });
   }
 
@@ -132,7 +132,7 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
       // 1. Approve the submission
       await transitionMilestone(client, dispute.milestone_id, 'RELEASED', mediatorId, {
         resolution: 'RELEASED',
-        mediator_notes: notes.trim(),
+        mediator_notes: explanationNote.trim(),
       });
 
       await simulateMilestoneRelease(client, dispute.milestone_id, dispute.milestone_amount);
@@ -146,7 +146,7 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
       // 2. Request revision
       await transitionMilestone(client, dispute.milestone_id, 'REVISION_REQUESTED', mediatorId, {
         resolution: 'REVISION_REQUESTED',
-        mediator_notes: notes.trim(),
+        mediator_notes: explanationNote.trim(),
       });
     }
 
@@ -156,7 +156,7 @@ router.post('/:id/resolve', authenticateToken, async (req, res) => {
        SET status = 'RESOLVED', resolution = $1, mediator_notes = $2, resolved_by = $3, resolved_at = NOW()
        WHERE id = $4
        RETURNING *`,
-      [resolution, notes.trim(), mediatorId, disputeId]
+      [resolution, explanationNote.trim(), mediatorId, disputeId]
     );
 
     // Create system support message recording the verdict

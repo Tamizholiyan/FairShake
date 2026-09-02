@@ -83,15 +83,16 @@ router.post('/', authenticateToken, async (req, res) => {
       [senderId, targetRecipientId, request_id || null, dispute_id || null, body.trim()]
     );
 
-    const createdMsg = rows[0];
+    const msgData = {
+      ...createdMsg,
+      sender_name: req.user.name,
+      sender_role: req.user.role,
+    };
 
     res.status(201).json({
       message: 'Message sent successfully',
-      data: {
-        ...createdMsg,
-        sender_name: req.user.name,
-        sender_role: req.user.role,
-      },
+      data: msgData,
+      message_item: msgData,
     });
   } catch (error) {
     console.error('Send message error:', error);

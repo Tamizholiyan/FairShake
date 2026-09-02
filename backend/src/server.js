@@ -9,6 +9,8 @@ const requestRoutes = require('./routes/requests');
 const milestoneRoutes = require('./routes/milestones');
 const disputeRoutes = require('./routes/disputes');
 const messageRoutes = require('./routes/messages');
+const addressesRoutes = require('./routes/addresses');
+const ratingsRoutes = require('./routes/ratings');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,6 +38,8 @@ app.use('/api/deals', requestRoutes); // Backward compatibility
 app.use('/api/milestones', milestoneRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/addresses', addressesRoutes);
+app.use('/api/ratings', ratingsRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {

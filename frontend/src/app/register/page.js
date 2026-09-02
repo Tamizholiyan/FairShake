@@ -237,7 +237,6 @@ export default function RegisterPage() {
                 required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                placeholder="ramesh@example.com"
                 className="input-field"
               />
             </div>
@@ -285,9 +284,9 @@ export default function RegisterPage() {
                   className="input-field"
                   style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                 >
-                  <option value="">{t('select_category')}</option>
+                  <option value="" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>{t('select_category')}</option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id} value={c.id} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
                       {c.name}
                     </option>
                   ))}
