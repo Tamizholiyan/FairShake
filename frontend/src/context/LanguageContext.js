@@ -1,40 +1,20 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { translations } from '../lib/i18n';
 
 const LanguageContext = createContext(null);
 
-export const SUPPORTED_LANGUAGES = [
-  { code: 'en-GB', label: 'English (UK)', flag: '🇬🇧' },
-  { code: 'ta', label: 'தமிழ்', flag: '🇮🇳' },
-  { code: 'hi', label: 'हिंदी', flag: '🇮🇳' },
-];
-
 export function LanguageProvider({ children }) {
-  const [locale, setLocaleState] = useState('en-GB');
-
-  useEffect(() => {
-    const saved = localStorage.getItem('fairshake_locale');
-    if (saved && translations[saved]) {
-      setLocaleState(saved);
-    }
-  }, []);
-
-  const setLocale = (newLocale) => {
-    if (translations[newLocale]) {
-      setLocaleState(newLocale);
-      localStorage.setItem('fairshake_locale', newLocale);
-    }
-  };
+  const [locale] = useState('en-GB');
 
   const t = (key) => {
-    const dict = translations[locale] || translations['en-GB'];
-    return dict[key] || translations['en-GB'][key] || key;
+    const dict = translations['en-GB'] || {};
+    return dict[key] || key;
   };
 
   return (
-    <LanguageContext.Provider value={{ locale, setLocale, t }}>
+    <LanguageContext.Provider value={{ locale, t }}>
       {children}
     </LanguageContext.Provider>
   );

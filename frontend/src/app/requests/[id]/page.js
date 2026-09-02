@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '../../../context/AuthContext';
 import { useLanguage } from '../../../context/LanguageContext';
+import { formatDate, formatTime } from '../../../lib/formatDate';
 import {
   Shield,
   Clock,
@@ -20,7 +21,17 @@ import {
   RefreshCw,
   User,
   MapPin,
+  Phone,
+  Star,
+  XCircle,
+  Plus,
+  Trash2,
+  Image as ImageIcon,
+  Edit3,
+  Check,
+  X,
 } from 'lucide-react';
+import RatingStars from '../../../components/RatingStars';
 
 export default function RequestDetailPage() {
   const { id } = useParams();
@@ -34,10 +45,11 @@ export default function RequestDetailPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Form states
+  // Multi-file upload states
   const [activeUploadMilestoneId, setActiveUploadMilestoneId] = useState(null);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
 
+  // Dispute issue states
   const [activeIssueMilestoneId, setActiveIssueMilestoneId] = useState(null);
   const [issueReason, setIssueReason] = useState('');
 
@@ -45,6 +57,27 @@ export default function RequestDetailPage() {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [sendingMsg, setSendingMsg] = useState(false);
+
+  // Applicant providers state
+  const [applications, setApplications] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(false);
+
+  // Edit Milestones Modal (Client negotiation)
+  const [editMilestonesOpen, setEditMilestonesOpen] = useState(false);
+  const [editTotalAmount, setEditTotalAmount] = useState('');
+  const [editMilestones, setEditMilestones] = useState([]);
+  const [savingMilestones, setSavingMilestones] = useState(false);
+
+  // Cancellation & Refund Modal
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [submittingCancel, setSubmittingCancel] = useState(false);
+
+  // Provider Rating Modal
+  const [ratingModalOpen, setRatingModalOpen] = useState(false);
+  const [ratingStars, setRatingStars] = useState(5);
+  const [ratingReview, setRatingReview] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
 
   const fetchRequestDetails = async () => {
     try {
@@ -62,6 +95,11 @@ export default function RequestDetailPage() {
       });
       const msgData = await msgRes.json();
       if (msgRes.ok) setMessages(msgData.messages || []);
+
+      // If open request and user is client or mediator, fetch applicant proposals
+      if (data.request.status === 'OPEN' && (data.request.client_id === user?.id || user?.role === 'MEDIATOR')) {
+        fetchApplications();
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -69,14 +107,32 @@ export default function RequestDetailPage() {
     }
   };
 
+  const fetchApplications = async () => {
+    try {
+      setLoadingApps(true);
+      const token = localStorage.getItem('fairshake_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/${id}/applications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setApplications(data.applications || []);
+      }
+    } catch (err) {
+      console.warn('Fetch applications error:', err);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
   useEffect(() => {
     fetchRequestDetails();
   }, [id, user]);
 
-  // Provider Submits / Resubmits Deliverable
+  // Provider Submits Multi-photo Deliverable
   const handleMilestoneSubmit = async (e, milestoneId) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    if (!selectedFiles || selectedFiles.length === 0) return;
 
     setActionLoading(true);
     setError('');
@@ -85,7 +141,9 @@ export default function RequestDetailPage() {
     try {
       const token = localStorage.getItem('fairshake_token');
       const formData = new FormData();
-      formData.append('file', selectedFile);
+      for (let i = 0; i < selectedFiles.length; i++) {
+        formData.append('files', selectedFiles[i]);
+      }
 
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/milestones/${milestoneId}/submit`, {
         method: 'POST',
@@ -97,8 +155,8 @@ export default function RequestDetailPage() {
       if (!res.ok) throw new Error(data.error || 'Failed to submit work.');
 
       setSuccessMessage(data.message);
-      setSelectedFile(null);
       setActiveUploadMilestoneId(null);
+      setSelectedFiles([]);
       await fetchRequestDetails();
     } catch (err) {
       setError(err.message);
@@ -107,8 +165,10 @@ export default function RequestDetailPage() {
     }
   };
 
-  // Client Approves Deliverable (Section 9.5 & 10.1)
+  // Client Approves Milestone
   const handleMilestoneApprove = async (milestoneId) => {
+    if (!confirm('Are you sure you want to approve this deliverable? This will immediately release milestone payout.')) return;
+
     setActionLoading(true);
     setError('');
     setSuccessMessage('');
@@ -132,7 +192,7 @@ export default function RequestDetailPage() {
     }
   };
 
-  // Client Raises an Issue (Section 10.1)
+  // Client Reports an Issue
   const handleMilestoneIssue = async (e, milestoneId) => {
     e.preventDefault();
     if (!issueReason.trim()) return;
@@ -149,15 +209,15 @@ export default function RequestDetailPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ reason: issueReason.trim() }),
+        body: JSON.stringify({ reason: issueReason }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to raise issue.');
+      if (!res.ok) throw new Error(data.error || 'Failed to report issue.');
 
       setSuccessMessage(data.message);
-      setIssueReason('');
       setActiveIssueMilestoneId(null);
+      setIssueReason('');
       await fetchRequestDetails();
     } catch (err) {
       setError(err.message);
@@ -166,7 +226,164 @@ export default function RequestDetailPage() {
     }
   };
 
-  // Send Message in Two-Way Conversation (Section 11)
+  // Client Selects an Applicant Provider
+  const handleSelectProvider = async (providerId) => {
+    if (!confirm('Assign this provider to start the project?')) return;
+
+    setActionLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('fairshake_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/${id}/select-provider`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ provider_id: providerId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to assign provider.');
+
+      setSuccessMessage(data.message);
+      await fetchRequestDetails();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Open Edit Milestones Modal
+  const handleOpenEditMilestones = () => {
+    setEditTotalAmount(String(request.total_amount));
+    setEditMilestones(request.milestones.map(m => ({
+      title: m.title,
+      description: m.description || '',
+      amount: String(m.amount),
+      dueDate: m.due_date || '',
+    })));
+    setEditMilestonesOpen(true);
+    setError('');
+  };
+
+  const handleSaveMilestones = async (e) => {
+    e.preventDefault();
+    const totalNum = Number(editTotalAmount);
+    if (totalNum <= 0 || totalNum % 100 !== 0) {
+      setError('Total budget must be a multiple of ₹100.');
+      return;
+    }
+
+    let sum = 0;
+    for (let i = 0; i < editMilestones.length; i++) {
+      const amt = Number(editMilestones[i].amount);
+      if (isNaN(amt) || amt <= 0 || amt % 100 !== 0) {
+        setError(`Milestone #${i + 1} must be a valid amount in multiples of ₹100.`);
+        return;
+      }
+      sum += amt;
+    }
+
+    if (Math.abs(sum - totalNum) > 0.01) {
+      setError(`Milestones sum (₹${sum}) must equal total budget (₹${totalNum}).`);
+      return;
+    }
+
+    setSavingMilestones(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('fairshake_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/${id}/milestones`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          total_amount: totalNum,
+          milestones: editMilestones,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update milestones.');
+
+      setSuccessMessage('Milestones and budget updated successfully.');
+      setEditMilestonesOpen(false);
+      await fetchRequestDetails();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingMilestones(false);
+    }
+  };
+
+  // Client Cancellation Request
+  const handleCancellationSubmit = async (e) => {
+    e.preventDefault();
+    if (!cancelReason.trim()) return;
+
+    setSubmittingCancel(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('fairshake_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/requests/${id}/request-cancellation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason: cancelReason.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to submit cancellation request.');
+
+      setSuccessMessage('Cancellation request submitted to Fairshake Support for review.');
+      setCancelModalOpen(false);
+      setCancelReason('');
+      await fetchRequestDetails();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmittingCancel(false);
+    }
+  };
+
+  // Rating Submit
+  const handleRatingSubmit = async (e) => {
+    e.preventDefault();
+    setSubmittingRating(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('fairshake_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/ratings/${id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          stars: ratingStars,
+          review_text: ratingReview.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to submit rating.');
+
+      setSuccessMessage('Rating and review submitted! Thank you.');
+      setRatingModalOpen(false);
+      await fetchRequestDetails();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
+  // Send Chat Message
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -174,6 +391,8 @@ export default function RequestDetailPage() {
     setSendingMsg(true);
     try {
       const token = localStorage.getItem('fairshake_token');
+      const recipientId = isClient ? request.provider_id : request.client_id;
+
       const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}/api/messages`, {
         method: 'POST',
         headers: {
@@ -181,18 +400,22 @@ export default function RequestDetailPage() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          request_id: id,
+          recipient_id: recipientId || request.client_id,
+          request_id: request.id,
           body: newMessage.trim(),
         }),
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send message.');
-
-      setNewMessage('');
-      await fetchRequestDetails();
+      if (res.ok) {
+        const msgObj = data.data || data.message_item || (typeof data.message === 'object' ? data.message : null);
+        if (msgObj && typeof msgObj === 'object') {
+          setMessages((prev) => [...prev, msgObj]);
+        }
+        setNewMessage('');
+      }
     } catch (err) {
-      alert(err.message);
+      console.error('Send message error:', err);
     } finally {
       setSendingMsg(false);
     }
@@ -221,6 +444,10 @@ export default function RequestDetailPage() {
   const isProvider = request.provider_id === user?.id;
   const isMediator = user?.role === 'MEDIATOR';
 
+  const unreleasedSum = request.milestones
+    ?.filter(m => m.status !== 'RELEASED')
+    ?.reduce((sum, m) => sum + Number(m.amount), 0) || 0;
+
   const getMilestoneStatusBadge = (status) => {
     switch (status) {
       case 'PENDING':
@@ -248,10 +475,34 @@ export default function RequestDetailPage() {
           <span>Back to Dashboard</span>
         </Link>
 
-        <button onClick={fetchRequestDetails} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}>
-          <RefreshCw size={14} />
-          <span>Refresh Status</span>
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {isClient && request.status !== 'COMPLETED' && request.status !== 'CANCELLED' && (
+            <button
+              onClick={() => setCancelModalOpen(true)}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.8rem', color: 'var(--accent-rose)', borderColor: 'rgba(244, 63, 94, 0.3)' }}
+            >
+              <XCircle size={14} />
+              <span>Request Cancellation & Refund</span>
+            </button>
+          )}
+
+          {isClient && request.status === 'COMPLETED' && !request.rating && (
+            <button
+              onClick={() => setRatingModalOpen(true)}
+              className="btn btn-primary"
+              style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+            >
+              <Star size={14} />
+              <span>Rate Service Provider</span>
+            </button>
+          )}
+
+          <button onClick={fetchRequestDetails} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}>
+            <RefreshCw size={14} />
+            <span>Refresh Status</span>
+          </button>
+        </div>
       </div>
 
       {/* Notifications */}
@@ -266,6 +517,32 @@ export default function RequestDetailPage() {
         </div>
       )}
 
+      {/* Active Cancellation Alert Banner */}
+      {request.cancellation_request && request.cancellation_request.status === 'PENDING' && (
+        <div style={{
+          padding: '16px 20px',
+          borderRadius: '12px',
+          background: 'rgba(245, 158, 11, 0.12)',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          marginBottom: '24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}>
+          <div>
+            <div style={{ fontWeight: 700, color: 'var(--accent-amber)', fontSize: '0.95rem', marginBottom: '2px' }}>
+              ⚠️ Project Cancellation & Refund Request Under Support Review
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+              Reason: "{request.cancellation_request.reason}" • Unreleased Refund Amount: <strong>₹{Number(request.cancellation_request.unreleased_amount).toLocaleString('en-IN')}</strong>
+            </div>
+          </div>
+          <span className="badge badge-revision">Pending Mediator Verdict</span>
+        </div>
+      )}
+
       {/* Request Header Card */}
       <div className="glass-panel" style={{ padding: '30px', marginBottom: '28px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '20px', marginBottom: '20px' }}>
@@ -276,6 +553,16 @@ export default function RequestDetailPage() {
                 <span className="badge" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                   {request.category_name}
                 </span>
+              )}
+              {isClient && request.status === 'OPEN' && (
+                <button
+                  onClick={handleOpenEditMilestones}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '0.75rem', gap: '4px' }}
+                >
+                  <Edit3 size={12} />
+                  <span>Edit Milestones / Budget</span>
+                </button>
               )}
             </div>
 
@@ -302,10 +589,10 @@ export default function RequestDetailPage() {
           </div>
         </div>
 
-        {/* Counterparties */}
+        {/* Counterparties & Verified Phone Numbers */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
           gap: '16px',
           paddingTop: '16px',
           borderTop: '1px solid var(--border-subtle)',
@@ -314,16 +601,112 @@ export default function RequestDetailPage() {
           <div>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '2px' }}>CLIENT / BUYER</div>
             <div style={{ fontWeight: 600 }}>{request.client_name} ({request.client_email})</div>
+            {request.client_phone && (
+              <a href={`tel:${request.client_phone}`} style={{ fontSize: '0.78rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <Phone size={12} />
+                <span>{request.client_phone}</span>
+              </a>
+            )}
           </div>
 
           <div>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '2px' }}>SERVICE PROVIDER</div>
-            <div style={{ fontWeight: 600 }}>
-              {request.provider_name ? `${request.provider_name} (${request.provider_email})` : 'Awaiting Provider'}
+            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>{request.provider_name ? request.provider_name : 'Awaiting Provider Selection'}</span>
+              {request.provider_name && (
+                <RatingStars rating={request.provider_avg_rating} count={request.provider_rating_count} />
+              )}
             </div>
+            {request.provider_phone && (
+              <a href={`tel:${request.provider_phone}`} style={{ fontSize: '0.78rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <Phone size={12} />
+                <span>{request.provider_phone} (Call Provider)</span>
+              </a>
+            )}
           </div>
         </div>
       </div>
+
+      {/* APPLICANT PROVIDERS LIST (Visible to Client / Mediator when OPEN) */}
+      {isClient && request.status === 'OPEN' && (
+        <div className="glass-panel" style={{ padding: '28px', marginBottom: '28px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Applicant Providers ({applications.length})</h2>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                Review proposals, call providers directly, and choose your preferred pro.
+              </p>
+            </div>
+          </div>
+
+          {loadingApps ? (
+            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>Loading applicants...</div>
+          ) : applications.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              No providers have submitted quotes yet. Matching nearby providers will appear here.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {applications.map((app) => (
+                <div
+                  key={app.id}
+                  className="glass-card"
+                  style={{
+                    padding: '18px 22px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '16px',
+                  }}
+                >
+                  <div style={{ flex: '1 1 320px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.05rem' }}>{app.provider_name}</span>
+                      <RatingStars rating={app.avg_rating} count={app.rating_count} />
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      {app.provider_phone && (
+                        <a href={`tel:${app.provider_phone}`} style={{ color: 'var(--accent-emerald)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Phone size={13} />
+                          <span>{app.provider_phone} (Click to Call)</span>
+                        </a>
+                      )}
+                      <span>Applied on {formatDate(app.created_at)}</span>
+                    </div>
+
+                    {app.message && (
+                      <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                        "{app.message}"
+                      </p>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--accent-blue)' }}>
+                        ₹{Number(app.proposed_amount || request.total_amount).toLocaleString('en-IN')}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Proposed Quote</div>
+                    </div>
+
+                    <button
+                      onClick={() => handleSelectProvider(app.provider_id)}
+                      disabled={actionLoading}
+                      className="btn btn-success"
+                      style={{ padding: '10px 18px', fontSize: '0.88rem' }}
+                    >
+                      <Check size={16} />
+                      <span>Select Provider</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Content Layout: Milestone Timeline + Two-Way Conversation */}
       <div className="grid-cols-3" style={{ alignItems: 'start', gap: '28px' }}>
@@ -339,7 +722,6 @@ export default function RequestDetailPage() {
               {request.milestones?.map((m) => {
                 const isSubmitting = activeUploadMilestoneId === m.id;
                 const isDisputing = activeIssueMilestoneId === m.id;
-                const latestSubmission = m.submissions?.[m.submissions.length - 1];
 
                 return (
                   <div
@@ -350,12 +732,12 @@ export default function RequestDetailPage() {
                       borderLeft: m.status === 'RELEASED'
                         ? '4px solid var(--accent-emerald)'
                         : m.status === 'REVISION_REQUESTED'
-                        ? '4px solid var(--accent-amber)'
-                        : m.status === 'DISPUTED' || m.status === 'IN_MEDIATION'
-                        ? '4px solid var(--accent-purple)'
-                        : m.status === 'SUBMITTED'
-                        ? '4px solid var(--accent-blue)'
-                        : '4px solid var(--border-subtle)',
+                          ? '4px solid var(--accent-amber)'
+                          : m.status === 'DISPUTED' || m.status === 'IN_MEDIATION'
+                            ? '4px solid var(--accent-purple)'
+                            : m.status === 'SUBMITTED'
+                              ? '4px solid var(--accent-blue)'
+                              : '4px solid var(--border-subtle)',
                     }}
                   >
                     {/* Header */}
@@ -366,7 +748,7 @@ export default function RequestDetailPage() {
                           {getMilestoneStatusBadge(m.status)}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                          Target Date: {m.due_date ? new Date(m.due_date).toLocaleDateString() : 'Flexible'}
+                          {t('target_date')}: {m.due_date ? formatDate(m.due_date) : t('flexible')}
                         </div>
                       </div>
 
@@ -375,38 +757,73 @@ export default function RequestDetailPage() {
                       </div>
                     </div>
 
-                    {/* Submissions Revision History (Section 10.3) */}
-                    {m.submissions?.length > 0 && (
-                      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '12px 16px', marginBottom: '14px' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                          Deliverable History ({m.submissions.length} version{m.submissions.length > 1 ? 's' : ''}):
+                    {/* Milestone Description / Scope */}
+                    {m.description && (
+                      <div style={{
+                        fontSize: '0.86rem',
+                        color: 'var(--text-secondary)',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '8px',
+                        padding: '10px 14px',
+                        marginBottom: '14px',
+                        lineHeight: 1.5,
+                      }}>
+                        <div style={{ fontSize: '0.74rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {t('milestone_scope_heading')}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {m.description}
+                      </div>
+                    )}
+
+                    {/* Multi-photo Submissions Revision History */}
+                    {m.submissions?.length > 0 && (
+                      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: '10px', padding: '14px 16px', marginBottom: '14px' }}>
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                          {t('deliverable_history')} ({m.submissions.length} {t('stages_label')}):
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {m.submissions.map((s) => (
-                            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                              <span>Revision #{s.revision_round}: <strong>{s.original_filename}</strong> ({new Date(s.submitted_at).toLocaleDateString()})</span>
-                              {s.file_url && (
-                                <a
-                                  href={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}${s.file_url}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '3px' }}
-                                >
-                                  <span>Download</span>
-                                  <ExternalLink size={12} />
-                                </a>
-                              )}
+                            <div key={s.id} style={{ padding: '8px 12px', background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.82rem' }}>
+                                <span>{t('revision_prefix')} #{s.revision_round} ({formatDate(s.submitted_at)})</span>
+                              </div>
+
+                              {/* Multi-file Gallery Display */}
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                {(s.files && s.files.length > 0 ? s.files : [{ file_url: s.file_url, original_filename: s.original_filename }]).map((f, fIdx) => (
+                                  <a
+                                    key={f.id || fIdx}
+                                    href={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'}${f.file_url}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="glass-card"
+                                    style={{
+                                      padding: '6px 10px',
+                                      fontSize: '0.78rem',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                      color: 'var(--accent-blue)',
+                                    }}
+                                  >
+                                    <ImageIcon size={13} />
+                                    <span>{f.original_filename || `Photo #${fIdx + 1}`}</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                ))}
+                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Mediator Note if Revision was Requested (Section 10.2 & 10.3) */}
+                    {/* Support Review Notes */}
                     {m.dispute && m.dispute.status === 'RESOLVED' && m.dispute.resolution === 'REVISION_REQUESTED' && (
                       <div style={{ padding: '14px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: '10px', marginBottom: '14px' }}>
                         <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-amber)', marginBottom: '4px' }}>
-                          Support Review Revision Instructions:
+                          {t('support_decision_notes')}:
                         </div>
                         <p style={{ fontSize: '0.88rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
                           "{m.dispute.mediator_notes}"
@@ -414,37 +831,31 @@ export default function RequestDetailPage() {
                       </div>
                     )}
 
-                    {/* Issue Claim if under dispute */}
-                    {m.dispute && m.dispute.status === 'OPEN' && (
-                      <div style={{ padding: '12px 14px', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.25)', borderRadius: '10px', marginBottom: '14px' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-purple)', marginBottom: '2px' }}>
-                          Reported Issue Under Review:
-                        </div>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                          "{m.dispute.reason}"
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Deliverable Upload Form */}
+                    {/* Multi-Photo Deliverable Upload Form */}
                     {isSubmitting && (
                       <form onSubmit={(e) => handleMilestoneSubmit(e, m.id)} style={{ padding: '14px', background: 'var(--bg-secondary)', borderRadius: '10px', marginBottom: '14px' }}>
                         <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-                          Select Completed Deliverable File:
+                          {t('upload_deliverable_label')} (Up to 5 photos/files):
                         </div>
                         <input
                           type="file"
+                          multiple
                           required
-                          onChange={(e) => setSelectedFile(e.target.files[0])}
+                          onChange={(e) => setSelectedFiles(Array.from(e.target.files))}
                           className="input-field"
                           style={{ marginBottom: '10px' }}
                         />
+                        {selectedFiles.length > 0 && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                            Selected {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''}: {selectedFiles.map(f => f.name).join(', ')}
+                          </div>
+                        )}
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button type="submit" disabled={actionLoading} className="btn btn-primary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
-                            {actionLoading ? 'Uploading...' : 'Confirm Upload'}
+                            {actionLoading ? t('submitting_deliverable') : t('upload_and_submit_btn')}
                           </button>
-                          <button type="button" onClick={() => { setActiveUploadMilestoneId(null); setSelectedFile(null); }} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
-                            Cancel
+                          <button type="button" onClick={() => { setActiveUploadMilestoneId(null); setSelectedFiles([]); }} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
+                            {t('cancel_btn')}
                           </button>
                         </div>
                       </form>
@@ -467,10 +878,10 @@ export default function RequestDetailPage() {
                         />
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button type="submit" disabled={actionLoading} className="btn btn-danger" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
-                            {actionLoading ? 'Submitting...' : 'Submit to Fairshake Support'}
+                            {actionLoading ? t('submitting_issue') : t('submit_issue_btn')}
                           </button>
                           <button type="button" onClick={() => { setActiveIssueMilestoneId(null); setIssueReason(''); }} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
-                            Cancel
+                            {t('cancel_btn')}
                           </button>
                         </div>
                       </form>
@@ -522,7 +933,7 @@ export default function RequestDetailPage() {
           </div>
         </div>
 
-        {/* Right Column: Two-Way Support Conversation (Section 11) */}
+        {/* Right Column: Two-Way Support Conversation */}
         <div className="glass-panel" style={{ padding: '24px' }}>
           <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MessageSquare size={18} color="var(--accent-indigo)" />
@@ -535,24 +946,33 @@ export default function RequestDetailPage() {
                 No messages yet. Send a message to communicate with the other party or Fairshake Support.
               </div>
             ) : (
-              messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '8px',
-                    background: msg.sender_id === user?.id ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-card)',
-                    border: '1px solid var(--border-subtle)',
-                    maxWidth: '90%',
-                    alignSelf: msg.sender_id === user?.id ? 'flex-end' : 'flex-start',
-                  }}
-                >
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                    <strong>{msg.sender_name}</strong> ({msg.sender_role}) • {new Date(msg.created_at).toLocaleTimeString()}
+              messages.map((msg, idx) => {
+                if (!msg) return null;
+                const isMe = msg.sender_id === user?.id;
+                const senderName = msg.sender_name || (isMe ? 'You' : 'Participant');
+                const senderRole = msg.sender_role || (isMe ? user?.role : '');
+                const bodyText = typeof msg === 'string' ? msg : (msg.body || '');
+                if (!bodyText) return null;
+
+                return (
+                  <div
+                    key={msg.id || idx}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      background: isMe ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-card)',
+                      border: '1px solid var(--border-subtle)',
+                      maxWidth: '90%',
+                      alignSelf: isMe ? 'flex-end' : 'flex-start',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
+                      <strong>{senderName}</strong> {senderRole ? `(${senderRole})` : ''} • {formatTime(msg.created_at || new Date())}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{bodyText}</div>
                   </div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{msg.body}</div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -571,6 +991,194 @@ export default function RequestDetailPage() {
           </form>
         </div>
       </div>
+
+      {/* Edit Milestones & Budget Modal */}
+      {editMilestonesOpen && (
+        <div className="modal-overlay" onClick={() => setEditMilestonesOpen(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ padding: '28px', maxWidth: '640px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit3 size={20} color="var(--accent-indigo)" />
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Edit Milestones & Budget</h3>
+              </div>
+              <button onClick={() => setEditMilestonesOpen(false)} style={{ color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMilestones}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Total Budget (₹ in Multiples of 100) *
+                </label>
+                <input
+                  type="number"
+                  step="100"
+                  min="100"
+                  required
+                  value={editTotalAmount}
+                  onChange={(e) => setEditTotalAmount(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                {editMilestones.map((m, idx) => (
+                  <div key={idx} className="glass-card" style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <input
+                        type="text"
+                        required
+                        value={m.title}
+                        onChange={(e) => {
+                          const updated = [...editMilestones];
+                          updated[idx].title = e.target.value;
+                          setEditMilestones(updated);
+                        }}
+                        placeholder={`Stage #${idx + 1} Title`}
+                        className="input-field"
+                        style={{ flex: 1 }}
+                      />
+                      <input
+                        type="number"
+                        step="100"
+                        min="100"
+                        required
+                        value={m.amount}
+                        onChange={(e) => {
+                          const updated = [...editMilestones];
+                          updated[idx].amount = e.target.value;
+                          setEditMilestones(updated);
+                        }}
+                        placeholder="₹ Amount"
+                        className="input-field"
+                        style={{ width: '130px' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="submit" disabled={savingMilestones} className="btn btn-primary" style={{ flex: 1, padding: '12px' }}>
+                  {savingMilestones ? 'Saving Changes...' : 'Save & Update Milestones'}
+                </button>
+                <button type="button" onClick={() => setEditMilestonesOpen(false)} className="btn btn-secondary" style={{ padding: '12px 18px' }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cancellation & Refund Request Modal */}
+      {cancelModalOpen && (
+        <div className="modal-overlay" onClick={() => setCancelModalOpen(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ padding: '28px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <XCircle size={20} color="var(--accent-rose)" />
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Request Project Cancellation</h3>
+              </div>
+              <button onClick={() => setCancelModalOpen(false)} style={{ color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '14px', background: 'rgba(244, 63, 94, 0.08)', borderRadius: '10px', border: '1px solid rgba(244, 63, 94, 0.25)', marginBottom: '18px' }}>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                Unreleased Escrow Refund Amount:
+              </div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-rose)' }}>
+                ₹{unreleasedSum.toLocaleString('en-IN')}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Fairshake Support will review the project status. Upon approval, unreleased funds will be refunded directly to your original payment method.
+              </div>
+            </div>
+
+            <form onSubmit={handleCancellationSubmit}>
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Reason for Cancellation *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Describe why you need to cancel this project..."
+                  className="input-field"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="submit" disabled={submittingCancel} className="btn btn-danger" style={{ flex: 1, padding: '12px' }}>
+                  {submittingCancel ? 'Submitting...' : 'Submit Cancellation Application'}
+                </button>
+                <button type="button" onClick={() => setCancelModalOpen(false)} className="btn btn-secondary" style={{ padding: '12px 18px' }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Provider Rating Modal */}
+      {ratingModalOpen && (
+        <div className="modal-overlay" onClick={() => setRatingModalOpen(false)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ padding: '28px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Star size={20} color="#f59e0b" />
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Rate Service Provider</h3>
+              </div>
+              <button onClick={() => setRatingModalOpen(false)} style={{ color: 'var(--text-muted)' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              How satisfied are you with <strong>{request.provider_name}</strong>'s work on this project?
+            </p>
+
+            <form onSubmit={handleRatingSubmit}>
+              <div style={{ marginBottom: '20px' }}>
+                <RatingStars
+                  interactive={true}
+                  rating={ratingStars}
+                  onChange={(s) => setRatingStars(s)}
+                  size={28}
+                />
+              </div>
+
+              <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Written Review / Feedback (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={ratingReview}
+                  onChange={(e) => setRatingReview(e.target.value)}
+                  placeholder="Share details of your experience to help other clients..."
+                  className="input-field"
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button type="submit" disabled={submittingRating} className="btn btn-primary" style={{ flex: 1, padding: '12px' }}>
+                  {submittingRating ? 'Submitting...' : 'Submit Verified Review'}
+                </button>
+                <button type="button" onClick={() => setRatingModalOpen(false)} className="btn btn-secondary" style={{ padding: '12px 18px' }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

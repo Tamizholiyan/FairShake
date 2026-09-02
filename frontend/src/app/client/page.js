@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Shield, Plus, ArrowRight, CheckCircle, Clock, AlertTriangle, RefreshCw, XCircle } from 'lucide-react';
+import RatingStars from '../../components/RatingStars';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
@@ -117,7 +118,7 @@ export default function ClientDashboard() {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-            Loading your service requests...
+            {t('loading_requests')}
           </div>
         ) : error ? (
           <div style={{ padding: '16px', background: 'rgba(244, 63, 94, 0.12)', borderRadius: '10px', color: 'var(--accent-rose)' }}>
@@ -162,6 +163,11 @@ export default function ClientDashboard() {
                           {req.category_name}
                         </span>
                       )}
+                      {req.status === 'OPEN' && req.application_count > 0 && (
+                        <span className="badge" style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-indigo)' }}>
+                          {req.application_count} proposal{req.application_count > 1 ? 's' : ''}
+                        </span>
+                      )}
                       {req.open_issues > 0 && (
                         <span className="badge badge-disputed">
                           {req.open_issues} {t('milestone_disputed')}
@@ -169,10 +175,13 @@ export default function ClientDashboard() {
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', gap: '18px', fontSize: '0.82rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
-                      <span>Provider: <strong style={{ color: 'var(--text-secondary)' }}>{req.provider_name || 'Awaiting acceptance'}</strong></span>
-                      <span>Progress: <strong style={{ color: 'var(--text-secondary)' }}>{completedM}/{totalM} milestones</strong></span>
-                      {req.address_text && <span>Location: <strong style={{ color: 'var(--text-secondary)' }}>{req.address_text}</strong></span>}
+                    <div style={{ display: 'flex', gap: '18px', fontSize: '0.82rem', color: 'var(--text-muted)', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {t('provider_label')}: <strong style={{ color: 'var(--text-secondary)' }}>{req.provider_name || t('status_open')}</strong>
+                        {req.provider_name && <RatingStars rating={req.provider_avg_rating} count={req.provider_rating_count} />}
+                      </span>
+                      <span>{t('progress_label')}: <strong style={{ color: 'var(--text-secondary)' }}>{completedM}/{totalM} {t('milestones_label')}</strong></span>
+                      {req.address_text && <span>{t('address_location')}: <strong style={{ color: 'var(--text-secondary)' }}>{req.address_text}</strong></span>}
                     </div>
 
                     {/* Progress Bar */}
@@ -215,7 +224,7 @@ export default function ClientDashboard() {
                       className="btn btn-primary"
                       style={{ padding: '8px 14px', fontSize: '0.85rem' }}
                     >
-                      <span>View</span>
+                      <span>{t('view_details')}</span>
                       <ArrowRight size={14} />
                     </Link>
                   </div>

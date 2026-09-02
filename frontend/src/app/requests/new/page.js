@@ -24,9 +24,7 @@ export default function NewRequestPage() {
   });
 
   const [milestones, setMilestones] = useState([
-    { title: 'Phase 1: Initial Setup & Materials', amount: '', dueDate: '' },
-    { title: 'Phase 2: Core Execution', amount: '', dueDate: '' },
-    { title: 'Phase 3: Final Finishing & Handover', amount: '', dueDate: '' },
+    { title: '', amount: '', dueDate: '', description: '' },
   ]);
 
   const [loading, setLoading] = useState(false);
@@ -60,7 +58,7 @@ export default function NewRequestPage() {
   const addMilestone = () => {
     setMilestones([
       ...milestones,
-      { title: `Phase #${milestones.length + 1}`, amount: '', dueDate: '' },
+      { title: '', amount: '', dueDate: '', description: '' },
     ]);
   };
 
@@ -96,6 +94,19 @@ export default function NewRequestPage() {
     e.preventDefault();
     setError('');
 
+    if (totalAmountNum % 100 !== 0) {
+      setError('Total payment amount must be in multiples of ₹100 (e.g. ₹500, ₹1,200).');
+      return;
+    }
+
+    for (let i = 0; i < milestones.length; i++) {
+      const amt = parseFloat(milestones[i].amount);
+      if (amt % 100 !== 0) {
+        setError(`Milestone #${i + 1} (${milestones[i].title || 'Stage'}) must be in multiples of ₹100.`);
+        return;
+      }
+    }
+
     if (!isSumValid) {
       setError(`Milestone amounts (₹${currentMilestonesSum.toLocaleString('en-IN')}) must exactly equal the total amount (₹${totalAmountNum.toLocaleString('en-IN')}).`);
       return;
@@ -117,6 +128,7 @@ export default function NewRequestPage() {
           milestones: milestones.map((m, idx) => ({
             sequence: idx + 1,
             title: m.title,
+            description: m.description || '',
             amount: parseFloat(m.amount),
             dueDate: m.dueDate || null,
           })),
@@ -189,14 +201,14 @@ export default function NewRequestPage() {
     <div className="container" style={{ maxWidth: '820px', paddingTop: '32px' }}>
       <Link href="/client" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '20px' }}>
         <ArrowLeft size={16} />
-        <span>Back to Client Dashboard</span>
+        <span>{t('back_to_dashboard')}</span>
       </Link>
 
       <div className="glass-panel" style={{ padding: '32px' }}>
         <div style={{ marginBottom: '24px' }}>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>{t('post_new_request_btn')}</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-            Define the work requirements, job site location, and milestone payment stages. Payment is secured upfront to guarantee the request for matching providers.
+            {t('post_request_desc')}
           </p>
         </div>
 
@@ -222,14 +234,14 @@ export default function NewRequestPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '32px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                Request Title *
+                {t('request_title')} *
               </label>
               <input
                 type="text"
                 required
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="e.g. Master Bathroom Tile Replacement & Waterproofing"
+                placeholder={t('request_title_placeholder')}
                 className="input-field"
               />
             </div>
@@ -237,7 +249,7 @@ export default function NewRequestPage() {
             <div className="grid-cols-2">
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                  Service Category *
+                  {t('service_category')} *
                 </label>
                 <select
                   required
@@ -246,9 +258,9 @@ export default function NewRequestPage() {
                   className="input-field"
                   style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                 >
-                  <option value="">{t('select_category')}</option>
+                  <option value="" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>{t('select_category')}</option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id} value={c.id} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
                       {c.name}
                     </option>
                   ))}
@@ -256,12 +268,38 @@ export default function NewRequestPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                  Total Payment Amount (₹ INR) *
-                </label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    {t('total_amount_label')} * (Multiples of ₹100)
+                  </label>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {[100, 500, 1000, 5000].map((inc) => (
+                      <button
+                        key={inc}
+                        type="button"
+                        onClick={() => {
+                          const current = Number(formData.total_amount) || 0;
+                          setFormData({ ...formData, total_amount: String(current + inc) });
+                        }}
+                        className="badge"
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          fontSize: '0.7rem',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          color: 'var(--accent-indigo)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        +{inc}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <input
                   type="number"
-                  step="0.01"
+                  step="100"
+                  min="100"
                   required
                   value={formData.total_amount}
                   onChange={(e) => setFormData({ ...formData, total_amount: e.target.value })}
@@ -275,7 +313,7 @@ export default function NewRequestPage() {
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Job Site Location / Address (Used for Provider Radius Matching) *
+                  {t('job_site_location')} *
                 </label>
                 <button
                   type="button"
@@ -292,20 +330,20 @@ export default function NewRequestPage() {
                 required
                 value={formData.address_text}
                 onChange={(e) => setFormData({ ...formData, address_text: e.target.value })}
-                placeholder="e.g. 104 Richmond Road, Bangalore"
+                placeholder={t('job_site_placeholder')}
                 className="input-field"
               />
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>
-                Detailed Project Description & Scope
+                {t('project_desc_label')}
               </label>
               <textarea
                 rows={3}
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Describe specific work items, materials, timelines, and deliverables..."
+                placeholder={t('project_desc_placeholder')}
                 className="input-field"
               />
             </div>
@@ -315,9 +353,9 @@ export default function NewRequestPage() {
           <div style={{ marginBottom: '32px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Milestone Payment Breakdown</h3>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>{t('milestone_breakdown_heading')}</h3>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Funds are released per milestone upon your inspection and approval.
+                  {t('milestone_breakdown_desc')}
                 </p>
               </div>
 
@@ -328,69 +366,84 @@ export default function NewRequestPage() {
                 style={{ padding: '6px 12px', fontSize: '0.82rem' }}
               >
                 <Plus size={14} />
-                <span>Add Milestone</span>
+                <span>{t('add_milestone')}</span>
               </button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {milestones.map((m, idx) => (
-                <div key={idx} className="glass-card" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{
-                    width: '28px',
-                    height: '28px',
-                    borderRadius: '50%',
-                    background: 'rgba(99, 102, 241, 0.2)',
-                    color: 'var(--accent-indigo)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                  }}>
-                    {idx + 1}
+                <div key={idx} className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: 'rgba(99, 102, 241, 0.2)',
+                      color: 'var(--accent-indigo)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '0.85rem',
+                    }}>
+                      {idx + 1}
+                    </div>
+
+                    <div style={{ flex: '1 1 200px' }}>
+                      <input
+                        type="text"
+                        required
+                        value={m.title}
+                        onChange={(e) => handleMilestoneChange(idx, 'title', e.target.value)}
+                        placeholder={`${t('stage_title_placeholder')} #${idx + 1}`}
+                        className="input-field"
+                      />
+                    </div>
+
+                    <div style={{ width: '150px' }}>
+                      <input
+                        type="number"
+                        step="100"
+                        min="100"
+                        required
+                        value={m.amount}
+                        onChange={(e) => handleMilestoneChange(idx, 'amount', e.target.value)}
+                        placeholder={t('amount_placeholder')}
+                        className="input-field"
+                      />
+                    </div>
+
+                    <div style={{ width: '150px' }}>
+                      <input
+                        type="date"
+                        value={m.dueDate}
+                        onChange={(e) => handleMilestoneChange(idx, 'dueDate', e.target.value)}
+                        className="input-field"
+                      />
+                    </div>
+
+                    {milestones.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeMilestone(idx)}
+                        style={{ color: 'var(--accent-rose)', padding: '6px' }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
 
-                  <div style={{ flex: '1 1 200px' }}>
+                  {/* Milestone Description */}
+                  <div>
                     <input
                       type="text"
-                      required
-                      value={m.title}
-                      onChange={(e) => handleMilestoneChange(idx, 'title', e.target.value)}
-                      placeholder={`Stage #${idx + 1} Title`}
+                      value={m.description || ''}
+                      onChange={(e) => handleMilestoneChange(idx, 'description', e.target.value)}
+                      placeholder={t('stage_desc_placeholder')}
                       className="input-field"
+                      style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}
                     />
                   </div>
-
-                  <div style={{ width: '150px' }}>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={m.amount}
-                      onChange={(e) => handleMilestoneChange(idx, 'amount', e.target.value)}
-                      placeholder="Amount (₹)"
-                      className="input-field"
-                    />
-                  </div>
-
-                  <div style={{ width: '150px' }}>
-                    <input
-                      type="date"
-                      value={m.dueDate}
-                      onChange={(e) => handleMilestoneChange(idx, 'dueDate', e.target.value)}
-                      className="input-field"
-                    />
-                  </div>
-
-                  {milestones.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeMilestone(idx)}
-                      style={{ color: 'var(--accent-rose)', padding: '6px' }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -410,8 +463,8 @@ export default function NewRequestPage() {
                 {isSumValid ? <CheckCircle size={18} color="var(--accent-emerald)" /> : <AlertCircle size={18} color="var(--accent-amber)" />}
                 <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
                   {isSumValid
-                    ? 'Milestones sum exactly matches total request amount.'
-                    : `Milestone sum (₹${currentMilestonesSum.toLocaleString('en-IN')}) does not equal total (₹${totalAmountNum.toLocaleString('en-IN')}).`}
+                    ? t('sum_matches')
+                    : `${t('sum_mismatch')} (₹${currentMilestonesSum.toLocaleString('en-IN')} / ₹${totalAmountNum.toLocaleString('en-IN')})`}
                 </span>
               </div>
 
@@ -428,7 +481,7 @@ export default function NewRequestPage() {
             style={{ width: '100%', padding: '14px', fontSize: '1rem' }}
           >
             <Lock size={18} />
-            <span>{loading ? 'Securing Payment...' : `Secure Payment (₹${totalAmountNum.toLocaleString('en-IN')}) & Post Request`}</span>
+            <span>{loading ? t('securing_payment') : `${t('secure_payment_and_post')} (₹${totalAmountNum.toLocaleString('en-IN')})`}</span>
           </button>
         </form>
       </div>
